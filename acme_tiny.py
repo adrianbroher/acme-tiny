@@ -13,7 +13,7 @@ LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.StreamHandler())
 LOGGER.setLevel(logging.INFO)
 
-def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check=False, directory_url=DEFAULT_DIRECTORY_URL, contact=None):
+def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check=False, directory_url=DEFAULT_DIRECTORY_URL, contact=None, crt=None, renew_before=None):
     directory, acct_headers, alg, jwk = None, None, None, None # global variables
 
     # helper functions - base64 encode for jose spec
@@ -69,6 +69,14 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check
             time.sleep(0 if result is None else 2)
             result, _, _ = _send_signed_request(url, None, err_msg)
         return result
+
+    # check if certificate is expired
+    if crt and renew_before != None:
+        log.info("Check certificate expiry date...")
+        _, returncode = _cmd(["openssl", "x509", "-in", crt, "-noout", "-checkend", str(renew_before * 24 * 60 * 60)], returncodes=[0, 1])
+        if returncode == 0:
+            log.info("Certficate not yet expired, skipping.")
+            return ''
 
     # parse account key to get public key
     log.info("Parsing account key...")
@@ -200,6 +208,7 @@ def main(argv=None):
     parser.add_argument("--crt", metavar="CERTIFICATE_PATH", help="path to your certificate")
     parser.add_argument("--acme-dir", required=True, help="path to the .well-known/acme-challenge/ directory")
     parser.add_argument("--quiet", action="store_const", const=logging.ERROR, help="suppress output except for errors")
+    parser.add_argument("--renew-before", metavar="DAYS", type=int, default=None, help="renew certificate within DAYS before it expires")
     parser.add_argument("--disable-check", default=False, action="store_true", help="disable checking if the challenge file is hosted correctly before telling the CA")
     parser.add_argument("--directory-url", default=DEFAULT_DIRECTORY_URL, help="certificate authority directory url, default is Let's Encrypt")
     parser.add_argument("--ca", default=DEFAULT_CA, help="DEPRECATED! USE --directory-url INSTEAD!")
@@ -207,7 +216,7 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     LOGGER.setLevel(args.quiet or LOGGER.level)
-    signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, log=LOGGER, CA=args.ca, disable_check=args.disable_check, directory_url=args.directory_url, contact=args.contact)
+    signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, log=LOGGER, CA=args.ca, disable_check=args.disable_check, directory_url=args.directory_url, contact=args.contact, crt=args.crt, renew_before=args.renew_before)
     if not args.crt:
         sys.stdout.write(signed_crt)
     else:
