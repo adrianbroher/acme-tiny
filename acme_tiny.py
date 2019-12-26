@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # Copyright Daniel Roesler, under MIT license, see LICENSE at github.com/diafygi/acme-tiny
-import argparse, subprocess, json, os, sys, base64, binascii, time, hashlib, re, copy, textwrap, logging
+import argparse, subprocess, json, os, sys, base64, binascii, time, hashlib, re, copy, textwrap, logging, tempfile, shutil
 try:
     from urllib.request import urlopen, Request # Python 3
 except ImportError:
@@ -165,6 +165,21 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check
     log.info("Certificate signed!")
     return certificate_pem
 
+def write_replace(filename, content):
+    try:
+        with tempfile.NamedTemporaryFile('w', dir=os.path.dirname(filename), delete=False) as tf:
+            tempname = tf.name
+            tf.write(content.encode())
+            tf.flush()
+            os.fsync(tf.fileno())
+        umask = os.umask(0)
+        os.umask(umask)
+        os.chmod(tempname, 0o666 & ~umask)
+        os.rename(tempname, filename)
+    except:
+        os.unlink(tempname)
+        raise
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -174,14 +189,15 @@ def main(argv=None):
             account key, so PLEASE READ THROUGH IT! It's only ~200 lines, so it won't take long.
 
             Example Usage:
-            python acme_tiny.py --account-key ./account.key --csr ./domain.csr --acme-dir /usr/share/nginx/html/.well-known/acme-challenge/ > signed_chain.crt
+            python acme_tiny.py --account-key ./account.key --csr ./domain.csr --crt ./signed_chain.crt --acme-dir /usr/share/nginx/html/.well-known/acme-challenge/
 
             Example Crontab Renewal (once per month):
-            0 0 1 * * python /path/to/acme_tiny.py --account-key /path/to/account.key --csr /path/to/domain.csr --acme-dir /usr/share/nginx/html/.well-known/acme-challenge/ > /path/to/signed_chain.crt 2>> /var/log/acme_tiny.log
+            0 0 1 * * python /path/to/acme_tiny.py --account-key /path/to/account.key --csr /path/to/domain.csr --crt /path/to/signed_chain.crt --acme-dir /usr/share/nginx/html/.well-known/acme-challenge/ 2>> /var/log/acme_tiny.log
             """)
     )
     parser.add_argument("--account-key", required=True, help="path to your Let's Encrypt account private key")
     parser.add_argument("--csr", required=True, help="path to your certificate signing request")
+    parser.add_argument("--crt", metavar="CERTIFICATE_PATH", help="path to your certificate")
     parser.add_argument("--acme-dir", required=True, help="path to the .well-known/acme-challenge/ directory")
     parser.add_argument("--quiet", action="store_const", const=logging.ERROR, help="suppress output except for errors")
     parser.add_argument("--disable-check", default=False, action="store_true", help="disable checking if the challenge file is hosted correctly before telling the CA")
@@ -192,7 +208,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     LOGGER.setLevel(args.quiet or LOGGER.level)
     signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, log=LOGGER, CA=args.ca, disable_check=args.disable_check, directory_url=args.directory_url, contact=args.contact)
-    sys.stdout.write(signed_crt)
+    if not args.crt:
+        sys.stdout.write(signed_crt)
+    else:
+        write_replace(args.crt, signed_crt)
+
 
 if __name__ == "__main__": # pragma: no cover
     main(sys.argv[1:])
