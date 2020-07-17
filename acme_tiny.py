@@ -217,10 +217,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     LOGGER.setLevel(args.quiet or LOGGER.level)
     signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, log=LOGGER, CA=args.ca, disable_check=args.disable_check, directory_url=args.directory_url, contact=args.contact, crt=args.crt, renew_before=args.renew_before)
-    if not args.crt:
-        sys.stdout.write(signed_crt)
-    else:
-        write_replace(args.crt, signed_crt)
+    if signed_crt:
+        if not args.crt:
+            sys.stdout.write(signed_crt)
+        else:
+            write_replace(args.crt, signed_crt)
 
 
 if __name__ == "__main__": # pragma: no cover
